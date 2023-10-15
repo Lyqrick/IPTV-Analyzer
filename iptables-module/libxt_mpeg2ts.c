@@ -34,20 +34,19 @@
  The default match criteria, since version 0.9.0, is to match on
  correct MPEG2 TS packets.  Previously (<= 0.8.0) a rule would only
  match when a drop were detected.
-
  Its still possible to match on drop detection, via the parameter
  "--match-drop" (which is default off).
-
  Stats on packet drops are available via the proc filesystem.  These
  drop detection stats can be disabled via inverting the parameter
  --drop-detect, eg. "! --drop-detect".
-
+ Setting the --format parameter to rtp or raw demands a certain format.
 */
 static const struct option mpeg2ts_mt_opts[] = {
 	{.name = "name",		.has_arg = true,  .val = 'n'},
 	{.name = "drop-detect", 	.has_arg = false, .val = 'd'},
 	{.name = "match-drop",		.has_arg = false, .val = 'm'},
 	{.name = "max-streams",		.has_arg = true,  .val = 'x'},
+	{.name = "format",              .has_arg = true,  .val = 'f'},
 	{NULL},
 };
 
@@ -56,10 +55,11 @@ static void mpeg2ts_mt_help(void)
 	printf(
 "mpeg2ts (MPEG2 Transport Stream) match options:\n"
 "VERSION %s\n"
-"   [--name <name>]        Name for proc file /proc/net/xt_mpeg2ts/rule_NAME\n"
-"   [--match-drop]         Match on lost TS frames (default: off)\n"
-"   [--drop-detect]        Detect TS frame loss and store stats (default: ON)\n"
-"   [--max-streams <num>]  Track 'max' number of streams (per rule)\n",
+"   [--name <name>]          Name for proc file /proc/net/xt_mpeg2ts/rule_NAME\n"
+"   [--match-drop]           Match on lost TS frames (default: off)\n"
+"   [--drop-detect]          Detect TS frame loss and store stats (default: ON)\n"
+"   [--max-streams <num>]    Track 'max' number of streams (per rule)\n"
+"   [--format {auto|rtp|raw} Encapsulation format (default: auto)\n",
 		version
 		);
 }
@@ -72,6 +72,9 @@ static void mpeg2ts_mt_init(struct xt_entry_match *match)
 
 	/* Match on drops is disabled per default */
 	/*  XT_MPEG2TS_MATCH_DROP */
+
+	/* Auto-detect format */
+	info->flags |= XT_MPEG2TS_FORMAT_AUTO;
 }
 
 static int mpeg2ts_mt_parse(int c, char **argv, int invert, unsigned int *flags,
@@ -156,6 +159,22 @@ static int mpeg2ts_mt_parse(int c, char **argv, int invert, unsigned int *flags,
 
 		break;
 
+	case 'f': /* --format */
+		if (*flags & XT_MPEG2TS_FORMAT)
+			xtables_error(PARAMETER_PROBLEM,
+				"Can't specify --format option twice");
+		*flags |= XT_MPEG2TS_FORMAT;
+
+		if (strcmp(optarg, "auto") == 0)
+			info->flags = (info->flags & ~XT_MPEG2TS_FORMAT) | XT_MPEG2TS_FORMAT_AUTO;
+		else if (strcmp(optarg, "rtp") == 0)
+			info->flags = (info->flags & ~XT_MPEG2TS_FORMAT) | XT_MPEG2TS_FORMAT_RTP;
+		else if (strcmp(optarg, "raw") == 0)
+			info->flags = (info->flags & ~XT_MPEG2TS_FORMAT) | XT_MPEG2TS_FORMAT_RAW;
+		else
+			xtables_error(PARAMETER_PROBLEM, "bad --format argument: `%s'", optarg);
+		break;
+
 	default:
 		return false;
 	}
@@ -182,6 +201,15 @@ static void mpeg2ts_mt_print(const void *entry,
 
 	if (info->flags & XT_MPEG2TS_MAX_STREAMS)
 		printf(" max-streams:%u", info->cfg.max);
+
+	switch (info->flags & XT_MPEG2TS_FORMAT) {
+	case XT_MPEG2TS_FORMAT_RTP:
+		printf(" format:rtp");
+		break;
+	case XT_MPEG2TS_FORMAT_RAW:
+		printf(" format:raw");
+		break;
+	}
 }
 
 static void mpeg2ts_mt_save(const void *entry,
@@ -202,6 +230,14 @@ static void mpeg2ts_mt_save(const void *entry,
 	if (info->flags & XT_MPEG2TS_MAX_STREAMS)
 		printf(" --max-streams %u", info->cfg.max);
 
+	switch (info->flags & XT_MPEG2TS_FORMAT) {
+	case XT_MPEG2TS_FORMAT_RTP:
+		printf(" --format rtp");
+		break;
+	case XT_MPEG2TS_FORMAT_RAW:
+		printf(" --format raw");
+		break;
+	}
 }
 
 static struct xtables_match mpeg2ts_mt_reg = {
